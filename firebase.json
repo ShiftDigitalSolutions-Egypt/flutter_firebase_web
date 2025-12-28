@@ -1,1 +1,27 @@
-{"flutter":{"platforms":{"dart":{"lib/firebase_options.dart":{"projectId":"authmodule-test","configurations":{"web":"1:239733814657:web:09e16187166128e01ea480"}}}}}}
+{
+    "hosting": {
+        "public": "build/web",
+        "ignore": [
+            "firebase.json",
+            "**/.*",
+            "**/node_modules/**"
+        ],
+        "rewrites": [
+            {
+                "source": "**",
+                "destination": "/index.html"
+            }
+        ],
+        "headers": [
+            {
+                "source": "/assets/**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "public, max-age=31536000"
+                    }
+                ]
+            }
+        ]
+    }
+}
