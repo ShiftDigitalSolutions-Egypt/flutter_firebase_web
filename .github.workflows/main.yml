@@ -1,0 +1,112 @@
+name: production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.0"
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web
+        run: |
+          flutter build web --target lib/main.dart
+
+      - name: Upload web build as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+  deploy-to-s3:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.FE_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.FE_AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: Sync build to S3 (root)
+        run: |
+          aws s3 sync build/web s3://${{ secrets.FEATURE_FLAG_AWS_BUCKET_NAME }}/ \
+          --delete \
+          --exact-timestamps \
+          --cache-control "max-age=0, no-cache, no-store, must-revalidate"
+          
+      - name: Invalidate CloudFront (only critical files)
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.FEATURE_FLAG_CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/index.html" "/flutter_service_worker.js"
+      
+
+      - name: slack
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          channel-id: ${{ secrets.FRONTEND_DEPLOYMENTS}}
+          payload: |
+            {
+              "attachments": [
+                {
+                  "color": "#4BAE4F",
+                  "blocks": [
+                    {
+                      "type": "context",
+                      "elements": [
+                        {
+                          "type": "plain_text",
+                          "text": "Config File",
+                          "emoji": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "a new update have been released,"
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "*Release Notes:* <steps.release_notes.outputs.NOTES|View on Jira>"
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "<https://config-file-pro.aslyverify.com |Open Site>"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
